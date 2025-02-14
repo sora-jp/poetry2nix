@@ -427,6 +427,7 @@ lib.makeScope pkgs.newScope (self: {
         "pwd"
         "pyproject"
         "preferWheels"
+        "editablePackageSources"
       ];
       passedAttrs = builtins.removeAttrs attrs specialAttrs;
 
