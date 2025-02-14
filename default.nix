@@ -376,6 +376,7 @@ lib.makeScope pkgs.newScope (self: {
     , overrides ? self.defaultPoetryOverrides
     , meta ? { }
     , python ? pkgs.python3
+    , editablePackageSources ? { }
     , pwd ? projectDir
     , preferWheels ? false
     , groups ? [ "main" ]
@@ -384,14 +385,41 @@ lib.makeScope pkgs.newScope (self: {
     , ...
     }@attrs:
     let
+      inherit (lib) hasAttr;
+
+      pyProject = readTOML pyproject;
+
+      # Automatically add dependencies with develop = true as editable packages, but only if path dependencies
+      getEditableDeps = set: lib.mapAttrs
+        (_name: value: projectDir + "/${value.path}")
+        (lib.filterAttrs (_name: dep: dep.develop or false && hasAttr "path" dep) set);
+
+      excludedEditablePackageNames = builtins.filter
+        (pkg: editablePackageSources."${pkg}" == null)
+        (builtins.attrNames editablePackageSources);
+
+      allEditablePackageSources = (getEditableDeps (pyProject.tool.poetry."dev-dependencies" or { }))
+        // (
+        let
+          deps = pyProject.tool.poetry."dependencies" or { };
+          availableGroups = { main.dependencies = deps; } // pyProject.tool.poetry.group or { };
+        in
+        builtins.foldl' (acc: g: acc // getEditableDeps availableGroups.${g}.dependencies or { }) { } groups
+      )
+        // editablePackageSources;
+
+      editablePackageSources' = builtins.removeAttrs
+        allEditablePackageSources
+        excludedEditablePackageNames;
+
       poetryPython = self.mkPoetryPackages {
         inherit pyproject poetrylock overrides python pwd preferWheels groups checkGroups extras;
+        editablePackageSources = editablePackageSources';
       };
       py = poetryPython.python;
 
       hooks = py.pkgs.callPackage ./hooks { };
 
-      inherit (poetryPython) pyProject;
       specialAttrs = [
         "overrides"
         "poetrylock"
